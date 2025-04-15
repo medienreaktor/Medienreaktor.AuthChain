@@ -1,0 +1,13 @@
+Neos:
+  ContentRepositoryRegistry:
+    presets:
+      'default':
+        authProvider:
+          factoryObjectName: Medienreaktor\AuthChain\Security\AuthChainAuthProviderFactory
+Medienreaktor:
+  AuthChain:
+    chain:
+      denying:
+        class: Medienreaktor\AuthChain\Security\Test2AuthMiddleware
+      granting:
+        class: Medienreaktor\AuthChain\Security\TestAuthMiddleware
