@@ -7,9 +7,16 @@ use Neos\ContentRepository\Core\Feature\Security\Dto\Privilege;
 use Neos\ContentRepository\Core\Feature\Security\Dto\UserId;
 use Neos\ContentRepository\Core\Projection\ContentGraph\VisibilityConstraints;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
+use Neos\Flow\Annotations\Inject;
+use Neos\Flow\Security\Context as SecurityContext;
 
 abstract class AbstractChainableAuthProvider
 {
+
+    #[Inject]
+    protected SecurityContext $securityContext;
+
+
     /**
      * @param WorkspaceName $workspaceName
      * @param Privilege $currentValue
