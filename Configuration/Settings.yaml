@@ -4,12 +4,3 @@ Neos:
       'default':
         authProvider:
           factoryObjectName: Medienreaktor\AuthChain\Security\AuthChainAuthProviderFactory
-Medienreaktor:
-  AuthChain:
-    chain:
-      'Medienreaktor.AuthChain:Test1':
-        class: Medienreaktor\AuthChain\Security\Test2AuthMiddleware
-        position: 3000
-      'Medienreaktor.AuthChain:Test2':
-        class: Medienreaktor\AuthChain\Security\TestAuthMiddleware
-        position: 2000
