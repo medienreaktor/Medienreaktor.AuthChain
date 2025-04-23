@@ -7,9 +7,9 @@ Neos:
 Medienreaktor:
   AuthChain:
     chain:
-      granting:
+      'Medienreaktor.AuthChain:Test1':
         class: Medienreaktor\AuthChain\Security\Test2AuthMiddleware
         position: 3000
-      denying:
+      'Medienreaktor.AuthChain:Test2':
         class: Medienreaktor\AuthChain\Security\TestAuthMiddleware
         position: 2000

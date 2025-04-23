@@ -12,11 +12,16 @@ use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryI
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\Flow\Annotations\Inject;
 use Neos\Flow\Annotations\InjectConfiguration;
+use Neos\Flow\Configuration\Exception\InvalidConfigurationTypeException;
+use Neos\Flow\ObjectManagement\Exception\CannotBuildObjectException;
+use Neos\Flow\ObjectManagement\Exception\UnknownObjectException;
 use Neos\Flow\ObjectManagement\ObjectManager;
 use Neos\Flow\Security\Context as SecurityContext;
 use Neos\Neos\Domain\Service\UserService;
 use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 use Neos\Neos\Security\ContentRepositoryAuthProvider\ContentRepositoryAuthProvider;
+use Neos\Utility\Exception\InvalidPositionException;
+use Neos\Utility\PositionalArraySorter;
 
 class AuthChainAuthProvider implements AuthProviderInterface {
     protected ContentRepositoryAuthProvider $contentRepositoryAuthProvider;
@@ -91,21 +96,16 @@ class AuthChainAuthProvider implements AuthProviderInterface {
         return $next($initialValue);
     }
 
+    /**
+     * @throws UnknownObjectException
+     * @throws InvalidConfigurationTypeException
+     * @throws CannotBuildObjectException
+     * @throws InvalidPositionException
+     */
     private function initializeMiddlewareChain(): array {
-        $middlewareConfigurations = [];
+        $middlewareConfigurations = $this->chainConfiguration;
 
-        foreach ($this->chainConfiguration as $key => $config) {
-            $middlewareConfigurations[] = [
-                'key' => $key,
-                'position' => $config['position'] ?? 0,
-                'class' => $config['class']
-            ];
-        }
-
-        usort($middlewareConfigurations, function ($a, $b) {
-            return $a['position'] <=> $b['position'];
-        });
-
+        $middlewareConfigurations = (new PositionalArraySorter($middlewareConfigurations))->toArray();
         $middlewareClasses = [];
         foreach ($middlewareConfigurations as $config) {
             $object = $this->objectManager->get($config['class']);
