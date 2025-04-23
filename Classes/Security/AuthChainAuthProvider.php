@@ -19,10 +19,9 @@ use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 use Neos\Neos\Security\ContentRepositoryAuthProvider\ContentRepositoryAuthProvider;
 
 class AuthChainAuthProvider implements AuthProviderInterface {
-
     protected ContentRepositoryAuthProvider $contentRepositoryAuthProvider;
 
-    #[InjectConfiguration(path: "chain", package: "Medienreaktor.AuthChain")]
+    #[InjectConfiguration(path: "chain")]
     protected $chainConfiguration;
 
     #[Inject]
@@ -35,55 +34,85 @@ class AuthChainAuthProvider implements AuthProviderInterface {
         private ContentRepositoryAuthorizationService $authorizationService,
         private SecurityContext                       $securityContext,
     ) {
-        $this->contentRepositoryAuthProvider = new ContentRepositoryAuthProvider($this->contentRepositoryId, $this->userService, $this->contentGraphReadModel, $this->authorizationService, $this->securityContext);
+        $this->contentRepositoryAuthProvider = new ContentRepositoryAuthProvider(
+            $this->contentRepositoryId,
+            $this->userService,
+            $this->contentGraphReadModel,
+            $this->authorizationService,
+            $this->securityContext
+        );
     }
 
     public function canReadNodesFromWorkspace(WorkspaceName $workspaceName): Privilege {
-        $chain = $this->initializeMiddlewareChain();
-        $privilege = Privilege::granted("");
-
-        $next = function (Privilege $prevPrivilege) use ($workspaceName) {
-            return $this->contentRepositoryAuthProvider->canReadNodesFromWorkspace($workspaceName);
-        };
-
-        for ($i = count($chain) - 1; $i >= 0; $i--) {
-            /** @var AbstractAuthMiddleware $middleware */
-            $middleware = $chain[$i];
-
-            $next = function (Privilege $currentPrivilege) use ($middleware, $next, $workspaceName) {
-                return $middleware->canReadNodesFromWorkspace($workspaceName, $currentPrivilege, $next);
-            };
-
-        }
-
-        return $next($privilege);
-    }
-
-    private function initializeMiddlewareChain(): array {
-        $middlewareKeys = array_keys($this->chainConfiguration);
-
-        $middlewareClasses = [];
-
-        foreach ($middlewareKeys as $middlewareKey) {
-            $middleware = $this->chainConfiguration[$middlewareKey];
-            $object = $this->objectManager->get($middleware['class']);
-            $middlewareClasses[] = $object;
-        }
-
-        return array_reverse($middlewareClasses);
+        return $this->executeMiddlewareChain(
+            initialValue: Privilege::granted(""),
+            providerCallback: fn() => $this->contentRepositoryAuthProvider->canReadNodesFromWorkspace($workspaceName),
+            middlewareCallback: fn($middleware, $currentValue, $next) => $middleware->canReadNodesFromWorkspace($workspaceName, $currentValue, $next)
+        );
     }
 
     public function getVisibilityConstraints(WorkspaceName $workspaceName): VisibilityConstraints {
-        return $this->contentRepositoryAuthProvider->getVisibilityConstraints($workspaceName);
+        return $this->executeMiddlewareChain(
+            initialValue: VisibilityConstraints::createEmpty(),
+            providerCallback: fn() => $this->contentRepositoryAuthProvider->getVisibilityConstraints($workspaceName),
+            middlewareCallback: fn($middleware, $currentValue, $next) => $middleware->getVisibilityConstraints($workspaceName, $currentValue, $next)
+        );
     }
 
     public function canExecuteCommand(CommandInterface $command): Privilege {
-        return $this->contentRepositoryAuthProvider->canExecuteCommand($command);
+        return $this->executeMiddlewareChain(
+            initialValue: Privilege::granted(""),
+            providerCallback: fn() => $this->contentRepositoryAuthProvider->canExecuteCommand($command),
+            middlewareCallback: fn($middleware, $currentValue, $next) => $middleware->canExecuteCommand($command, $currentValue, $next)
+        );
     }
-
 
     public function getAuthenticatedUserId(): ?UserId {
-        return $this->contentRepositoryAuthProvider->getAuthenticatedUserId();
+        return $this->executeMiddlewareChain(
+            initialValue: null,
+            providerCallback: fn() => $this->contentRepositoryAuthProvider->getAuthenticatedUserId(),
+            middlewareCallback: fn($middleware, $currentValue, $next) => $middleware->getAuthenticatedUserId($currentValue, $next)
+        );
     }
 
+    private function executeMiddlewareChain(mixed $initialValue, callable $providerCallback, callable $middlewareCallback): mixed {
+        $chain = $this->initializeMiddlewareChain();
+
+        $next = function($currentValue) use ($providerCallback){
+            return $providerCallback();
+        };
+
+        for ($i = count($chain) - 1; $i >= 0; $i--) {
+            $middleware = $chain[$i];
+            $currentNext = $next;
+            $next = fn($currentValue) => $middlewareCallback($middleware, $currentValue, $currentNext);
+        }
+
+        return $next($initialValue);
+    }
+
+    private function initializeMiddlewareChain(): array {
+        $middlewareConfigurations = [];
+
+        foreach ($this->chainConfiguration as $key => $config) {
+            $middlewareConfigurations[] = [
+                'key' => $key,
+                'position' => $config['position'] ?? 0,
+                'class' => $config['class']
+            ];
+        }
+
+        usort($middlewareConfigurations, function ($a, $b) {
+            return $a['position'] <=> $b['position'];
+        });
+
+        $middlewareClasses = [];
+        foreach ($middlewareConfigurations as $config) {
+            $object = $this->objectManager->get($config['class']);
+            $middlewareClasses[] = $object;
+        }
+
+
+        return array_reverse($middlewareClasses);
+    }
 }
